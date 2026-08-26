@@ -31,6 +31,7 @@ A real pilot arm on Sonnet::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -38,6 +39,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "vendor" / "agentbench"))
 sys.path.insert(0, str(ROOT / "vendor" / "agentbench" / "src"))
+
+# AGENTbench starts the model server by spawning a `litellm` binary. Running
+# this script as `.venv/bin/python scripts/run_arm.py` -- without activating the
+# venv -- leaves that binary off PATH, and the run dies with a bare
+# FileNotFoundError several layers deep. Put the interpreter's own bin directory
+# first so the invocation style stops mattering.
+os.environ["PATH"] = os.pathsep.join(
+    [str(Path(sys.executable).parent), os.environ.get("PATH", "")]
+)
 
 from saaga_eval.arms import ARMS, Arm, get_arm, planner_config  # noqa: E402
 from saaga_eval.models import maybe_register  # noqa: E402
