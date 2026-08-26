@@ -2,10 +2,12 @@ build/
 corpora/
 *.egg-info/
 .env
+logs/
 output/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+runs/
 *.secret
 secret
 secret.*
