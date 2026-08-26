@@ -104,7 +104,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repo", required=True, help="owner/name, e.g. jlowin/fastmcp")
     parser.add_argument("--base-commit", help="Pin explicitly; otherwise derived from --instances-json")
-    parser.add_argument("--instances-json", type=Path, help="Instances for this repo (commit choice + audit)")
+    parser.add_argument(
+        "--instances-json",
+        type=Path,
+        help="Instances for this repo, from scripts/export_instances.py (commit choice + audit)",
+    )
     parser.add_argument("--corpus-root", type=Path, default=Path("corpora"))
     parser.add_argument("--workdir", type=Path, default=Path("build"))
     parser.add_argument("--backend", default="claude", choices=["claude", "cursor", "copilot"])
@@ -125,7 +129,13 @@ def main() -> int:
 
     base_commit = args.base_commit
     if not base_commit:
-        commits = [i["base_commit"] for i in instances if i.get("base_commit")]
+        # AGENTbench names this column base_sha; export_instances.py normalises
+        # it to base_commit, but accept either so a raw dump also works.
+        commits = [
+            i.get("base_commit") or i.get("base_sha")
+            for i in instances
+            if i.get("base_commit") or i.get("base_sha")
+        ]
         if not commits:
             raise SystemExit("Need --base-commit or --instances-json containing base_commit values.")
         base_commit = earliest_commit(checkout, commits)
@@ -163,6 +173,7 @@ def main() -> int:
                     texts,
                     instance.get("patch", ""),
                     instance.get("fail_to_pass") or instance.get("FAIL_TO_PASS") or [],
+                    test_patch=instance.get("test_patch") or instance.get("pr_test_patch"),
                 )
             )
             if findings:

@@ -188,17 +188,40 @@ def scan(
     return findings
 
 
+def test_patch_symbols(test_patch: str) -> set[str]:
+    """Test functions a PR's test patch introduces.
+
+    AGENTbench has no `fail_to_pass` column; it ships `pr_test_patch`, the test
+    changes alone. Tests added by the fix are the strongest contamination
+    marker there is -- a corpus generated before the fix has no legitimate
+    reason to name one.
+
+    Only `test`-prefixed definitions are kept, so a helper the test patch also
+    adds does not widen the net.
+    """
+    return {
+        symbol
+        for symbol in patch_introduced_symbols(test_patch)
+        if symbol.lower().startswith("test")
+    }
+
+
 def check_instance(
     corpus_texts: dict[str, str],
     patch: str,
     fail_to_pass: list[str] | None = None,
+    test_patch: str | None = None,
 ) -> list[Finding]:
-    """Full contamination check for one instance against one corpus."""
-    return scan(
-        corpus_texts,
-        patch_introduced_symbols(patch),
-        failing_test_identifiers(fail_to_pass or []),
-    )
+    """Full contamination check for one instance against one corpus.
+
+    `fail_to_pass` and `test_patch` are alternative sources for the same
+    signal: SWE-bench-style datasets carry the former, AGENTbench the latter.
+    """
+    test_names = failing_test_identifiers(fail_to_pass or [])
+    if test_patch:
+        test_names |= test_patch_symbols(test_patch)
+
+    return scan(corpus_texts, patch_introduced_symbols(patch), test_names)
 
 
 def blocking(findings: list[Finding]) -> list[Finding]:

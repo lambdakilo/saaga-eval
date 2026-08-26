@@ -91,3 +91,35 @@ def test_substring_matches_do_not_count():
     corpus = {"doc.md": "the _lookup_with_fallback_v2 helper is unrelated"}
     findings = scan(corpus, {"_lookup_with_fallback"}, set())
     assert findings == []
+
+
+TEST_PATCH = """\
+diff --git a/tests/test_models.py b/tests/test_models.py
+--- a/tests/test_models.py
++++ b/tests/test_models.py
+@@ -1,2 +1,8 @@
++def test_chatmessage_from_dict_role_conversion():
++    assert True
++
++def _build_fixture():
++    return None
+"""
+
+
+def test_test_patch_symbols_keeps_only_test_functions():
+    """AGENTbench ships pr_test_patch rather than a fail_to_pass list."""
+    from saaga_eval.contamination import test_patch_symbols
+
+    assert test_patch_symbols(TEST_PATCH) == {"test_chatmessage_from_dict_role_conversion"}
+
+
+def test_check_instance_accepts_a_test_patch():
+    corpus = {"saaga-docs/x.md": "covered by test_chatmessage_from_dict_role_conversion"}
+    findings = check_instance(corpus, GOLD_PATCH, test_patch=TEST_PATCH)
+    assert [f.kind for f in findings] == ["test-name"]
+
+
+def test_test_patch_helper_additions_are_not_markers():
+    """A helper the test patch adds is not distinctive enough to flag on."""
+    corpus = {"saaga-docs/x.md": "see _build_fixture for setup"}
+    assert check_instance(corpus, GOLD_PATCH, test_patch=TEST_PATCH) == []
