@@ -66,15 +66,38 @@ PYEOF
 
 echo
 echo "=============================================="
+echo " 4. Every arm resolves through AGENTbench"
+echo "=============================================="
+if "$PY" -c "import configs" 2>/dev/null; then
+  for arm in baseline saaga stripped_baseline saaga_substitution; do
+    NVIDIA_NIM_API_KEY="${NVIDIA_NIM_API_KEY:-nvapi-dry-run}" \
+      "$PY" scripts/run_arm.py --arm "$arm" \
+        --exec-model "${SMOKE_MODEL:-nim:zai/glm-5.2}" \
+        --slice-spec ":2" --workers 1 --dry-run >/dev/null
+    echo "  ok  $arm resolves"
+  done
+else
+  echo "  SKIP  AGENTbench not installed:"
+  echo "        git clone https://github.com/eth-sri/agentbench vendor/agentbench"
+  echo "        pip install -e vendor/agentbench"
+fi
+
+echo
+echo "=============================================="
 echo " Remaining checks require a live run"
 echo "=============================================="
 cat <<'EOF'
-Run two instances on a free endpoint, then verify by hand:
+Run two instances on NIM's free tier, then verify by hand:
 
-  python scripts/run_arm.py --arm baseline           --generator miniswe \
-      --exec-model <model> --slice-spec ":2" --workers 1
-  python scripts/run_arm.py --arm saaga_substitution --generator miniswe \
-      --exec-model <model> --slice-spec ":2" --workers 1
+  export NVIDIA_NIM_API_KEY=nvapi-...
+  python scripts/run_arm.py --arm stripped_baseline \
+      --exec-model nim:zai/glm-5.2 --slice-spec ":2" --workers 1
+  python scripts/run_arm.py --arm saaga_substitution \
+      --exec-model nim:zai/glm-5.2 --slice-spec ":2" --workers 1
+
+(C and D are the informative pair to smoke first: they exercise doc stripping,
+which is where the silent failure lives. Copy the exact model id from
+build.nvidia.com. Keep --workers at 1-2 if the endpoint is rate limited.)
 
 Then confirm, in the run output:
 

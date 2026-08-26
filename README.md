@@ -119,11 +119,18 @@ Expect hours — saaga's own README calls `init` "the heaviest command".
 
 ```bash
 python scripts/run_arm.py --arm saaga_substitution \
-    --generator claude --exec-model claude-sonnet-5 \
+    --generator claude_code --exec-model sonnet-4-5 \
     --run-id 0 --workers 4
 ```
 
 `--dry-run` prints the resolved configuration without spending anything.
+
+`--exec-model` and `--generator` are AGENTbench *registry keys*, not raw model
+names (`sonnet-4-5`, not `claude-sonnet-4-5-20250929`; `miniswe_agents`, not
+`miniswe`). `--exec-model nim:<model_id>` and
+`--exec-model openai-compat:<base_url>::<model_id>` register themselves on the
+fly, so any OpenAI-compatible endpoint works without editing the vendored
+harness.
 
 ### 3. Smoke test first
 
@@ -136,10 +143,20 @@ transfer to an expensive one, but "are these four arms actually four different
 experiments?" transfers perfectly — and that is the failure you want to find
 before the spend, not after.
 
-For a free smoke run, point `--generator miniswe` at any OpenAI-compatible
-endpoint (NVIDIA NIM, vLLM, OpenRouter). mini-SWE-agent takes a `base_url`
-directly, which is a much shorter path than configuring a vendor CLI. Keep
-`--workers` at 1–2 if the endpoint is rate-limited.
+For a free smoke run, use NVIDIA NIM. Only one key is needed and it is not an
+Anthropic one — `saaga init` rides an existing `claude` CLI login, and the
+benchmark runs go to NIM:
+
+```bash
+export NVIDIA_NIM_API_KEY=nvapi-...        # free tier: https://build.nvidia.com
+python scripts/run_arm.py --arm saaga_substitution \
+    --exec-model nim:zai/glm-5.2 --slice-spec ":2" --workers 1
+```
+
+The default `--generator miniswe_agents` is deliberate: mini-SWE-agent takes a
+`base_url` directly, whereas the CLI scaffolds each need their own vendor binary
+and auth. Copy the exact model id from build.nvidia.com, and keep `--workers` at
+1–2 if the endpoint is rate-limited.
 
 ## Cost
 
@@ -159,12 +176,15 @@ is a real methodological improvement independent of what it finds about saaga.
 
 ## Status
 
-Working: the planner adapter, the 2×2 arm registry, corpus build/pack/install,
-contamination detection, and the arm-D corpus protection — all covered by tests
-(`pytest`, 18 passing).
+Working and tested (`pytest`, 25 passing): the planner adapter, the 2×2 arm
+registry, corpus build/pack/install, contamination detection, arm-D corpus
+protection, and NIM/OpenAI-compatible model registration. The integration tests
+run against a real AGENTbench install and confirm it constructs `SaagaPlanner`
+from the registry without a fork; all four arms resolve to distinct harness
+calls.
 
-Not done: no corpus has been built, no arm has been run, and no result exists.
-Nothing here claims anything about saaga yet.
+Not done: no corpus has been built, no arm has been executed against Docker, and
+no result exists. Nothing here claims anything about saaga yet.
 
 ## Integration approach
 
