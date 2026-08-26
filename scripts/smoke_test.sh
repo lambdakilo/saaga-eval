@@ -84,6 +84,26 @@ fi
 
 echo
 echo "=============================================="
+echo " 5. Arms differ in a real container"
+echo "=============================================="
+# This is the check that used to require a 30-minute agent run. Both planners
+# ignore the model argument, so it needs no API key and no tokens -- it sets up
+# the container, plans, strips docs, and looks at the filesystem.
+if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  if [ -d "${CORPUS_ROOT:-corpora}" ]; then
+    ARMS="baseline saaga stripped_baseline saaga_substitution"
+  else
+    ARMS="baseline stripped_baseline"
+    echo "  note: no corpus yet, checking only the two arms that do not need one"
+  fi
+  # shellcheck disable=SC2086
+  "$PY" scripts/verify_arms.py --repo "${SMOKE_REPO:-huggingface/smolagents}" --arms $ARMS
+else
+  echo "  SKIP  docker unavailable"
+fi
+
+echo
+echo "=============================================="
 echo " Remaining checks require a live run"
 echo "=============================================="
 cat <<'EOF'
@@ -109,13 +129,12 @@ Keep --workers 1 on a free tier; NIM returns 429 on back-to-back requests.)
 
 Then confirm, in the run output:
 
-  [ ] saaga-docs/ is present in the container for arms B and D
-  [ ] the repo's own README/docs are GONE in arms C and D
-  [ ] saaga-docs/ SURVIVED in arm D  (this is the one that silently breaks)
-  [ ] the agent's first turns differ between arms (diff the trajectories)
   [ ] a patch was produced and evaluate.py ran the tests
-  [ ] analyze.py emitted token and cost columns, not just pass/fail
+  [ ] analyze.py emitted number_steps_first_read, not just pass/fail
   [ ] network egress was blocked during solve
+
+(Step 5 above already covers corpus presence, doc stripping, and corpus
+survival in arm D -- those no longer need an agent run.)
 
 Note on that last one: AGENTbench starts containers with --network=host, so an
 agent can reach github.com and fetch the upstream fix. Git history is already
