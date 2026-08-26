@@ -95,6 +95,67 @@ class Finding:
         )
 
 
+def _is_word_like(token: str) -> bool:
+    """Whether a token could plausibly occur as ordinary English.
+
+    Only single plain words qualify. Underscores and internal capitals mark a
+    composed identifier -- `compute_widget_checksum`, `TokenUsage` -- which no
+    amount of prose produces by accident, so those keep full severity wherever
+    they appear.
+    """
+    if "_" in token:
+        return False
+    return token[:1].isalpha() and token[1:].islower()
+
+
+def _looks_like_code(line: str, token: str) -> bool:
+    """Whether a hit refers to the symbol rather than reusing an English word.
+
+    Some identifiers are ordinary words. A smolagents patch introduced a class
+    named `Retrying`, and the corpus matched it twice -- once inside
+    ``print(f"Retrying in {total_wait:.2f}s...")`` and once in the sentence
+    "Retrying invalid API keys won't help". Neither refers to the class.
+
+    Blocking on prose would train people to ignore the checker; ignoring prose
+    outright could hide a real leak phrased in words. So for a word-like token a
+    code-context hit stays blocking and a bare-prose hit drops to review, where
+    a human decides. Composed identifiers are never downgraded -- see
+    `_is_word_like`.
+    """
+    if not _is_word_like(token):
+        return True
+
+    escaped = re.escape(token)
+    code_contexts = [
+        rf"`[^`]*\b{escaped}\b[^`]*`",   # inside backticks
+        rf"\b{escaped}\s*\(",            # a call or definition
+        rf"\.\s*{escaped}\b",            # attribute access
+        rf"\b{escaped}\s*\.",            # used as a namespace
+        rf"import\s+.*\b{escaped}\b",    # imported by name
+        # Assignment and annotation require an identifier on the far side.
+        # Without that, markdown prose like "**Retry is not right**: Retrying
+        # invalid keys won't help" reads as a binding and blocks the instance.
+        rf"\b{escaped}\s*[:=]\s*\w",     # annotated or assigned a value
+        rf"\b\w+\s*[:=]\s*{escaped}\b",  # bound to a name
+    ]
+    return any(re.search(pattern, line) for pattern in code_contexts)
+
+
+def _is_distinctive(symbol: str) -> bool:
+    """Whether a symbol is specific enough that its presence means something.
+
+    Dunders are excluded outright. `__call__`, `__init__` and `__post_init__`
+    are language protocol names shared by every class in a codebase, so a patch
+    that adds one does not make the token evidence of a leak -- documentation
+    describing unrelated classes mentions them constantly. Real data made this
+    concrete: auditing a smolagents corpus, dunders produced every one of the
+    reported hits, and all of them were false.
+    """
+    if symbol.startswith("__") and symbol.endswith("__"):
+        return False
+    return len(symbol) >= _MIN_SYMBOL_LENGTH and symbol.lower() not in _STOPLIST
+
+
 def _definitions(lines: list[str]) -> set[str]:
     found = set()
     for line in lines:
@@ -124,11 +185,7 @@ def patch_introduced_symbols(patch: str) -> set[str]:
 
     introduced = _definitions(added_lines) - _definitions(removed_lines)
 
-    return {
-        symbol
-        for symbol in introduced
-        if len(symbol) >= _MIN_SYMBOL_LENGTH and symbol.lower() not in _STOPLIST
-    }
+    return {symbol for symbol in introduced if _is_distinctive(symbol)}
 
 
 def failing_test_identifiers(fail_to_pass: list[str]) -> set[str]:
@@ -173,17 +230,19 @@ def scan(
     for doc_path, text in sorted(corpus_texts.items()):
         for line_number, line in enumerate(text.splitlines(), start=1):
             for pattern, token, kind, severity in compiled:
-                if pattern.search(line):
-                    findings.append(
-                        Finding(
-                            severity=severity,
-                            kind=kind,
-                            token=token,
-                            doc_path=doc_path,
-                            line_number=line_number,
-                            line=line,
-                        )
+                match = pattern.search(line)
+                if not match:
+                    continue
+                findings.append(
+                    Finding(
+                        severity=severity if _looks_like_code(line, token) else Severity.REVIEW,
+                        kind=kind,
+                        token=token,
+                        doc_path=doc_path,
+                        line_number=line_number,
+                        line=line,
                     )
+                )
 
     return findings
 

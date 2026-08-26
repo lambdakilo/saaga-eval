@@ -142,9 +142,26 @@ class SaagaPlanner:
         quoted = " ".join(shlex.quote(root) for root in roots)
 
         def remove_docs_preserving_corpus(env, *args: Any, **kwargs: Any):
+            # Stash only what is actually on disk. The planner may have been
+            # bound to this instance during an earlier arm that installed a
+            # corpus into a *different* container, and a stale wrapper must not
+            # break an arm that legitimately has no corpus to preserve.
+            present = [
+                root
+                for root in roots
+                if env.execute(
+                    f"test -e {shlex.quote(root)}", timeout=False
+                ).get("returncode", 1) == 0
+            ]
+            if not present:
+                logger.debug("No saaga corpus present; removing docs unprotected")
+                return original(env, *args, **kwargs)
+
             env.execute(f"mkdir -p {_STASH_DIR}", timeout=False)
             stashed = env.execute(
-                f"tar czf {_STASH_DIR}/corpus.tgz {quoted}", timeout=False
+                "tar czf %s/corpus.tgz %s"
+                % (_STASH_DIR, " ".join(shlex.quote(p) for p in present)),
+                timeout=False,
             )
             if stashed.get("returncode", 1) != 0:
                 raise RuntimeError(

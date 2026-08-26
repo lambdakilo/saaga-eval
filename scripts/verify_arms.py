@@ -88,7 +88,7 @@ def check(arm: Arm, seen: dict) -> list[str]:
     return problems
 
 
-def run_arm(instance, arm: Arm, corpus_root: str) -> tuple[dict, list[str]]:
+def run_arm(benchmark, arm: Arm, corpus_root: str) -> tuple[dict, list[str]]:
     from agentbench.planners import get_planner
 
     from configs import plan_constants
@@ -97,6 +97,11 @@ def run_arm(instance, arm: Arm, corpus_root: str) -> tuple[dict, list[str]]:
     if config is None:
         config = dict(plan_constants.ALL_PLAN_CONFIGS[arm.plan_type])
     planner = get_planner(dict(config))
+
+    # A fresh instance per arm. SaagaPlanner wraps `instance.remove_docs` to
+    # protect the corpus, and that wrapper would otherwise persist onto the
+    # next arm -- which has its own container and may have no corpus at all.
+    instance = benchmark.get_instances()[0]
 
     env = instance.setup(env_config={}, setup_repo=False)
     try:
@@ -128,8 +133,8 @@ def main() -> int:
     )
     if not benchmark.instances:
         raise SystemExit(f"No instances for {args.repo!r}.")
-    instance = benchmark.instances[0]
-    print(f"Instance: {instance.instance_id}  (image {instance.docker_image})\n")
+    probe = benchmark.instances[0]
+    print(f"Instance: {probe.instance_id}  (image {probe.docker_image})\n")
 
     header = f"{'arm':<20} {'saaga-docs':>11} {'repo .md':>9} {'README':>7} {'docs/':>6}"
     print(header)
@@ -139,7 +144,7 @@ def main() -> int:
     for name in args.arms:
         arm = get_arm(name)
         try:
-            seen, problems = run_arm(instance, arm, args.corpus_root)
+            seen, problems = run_arm(benchmark, arm, args.corpus_root)
         except FileNotFoundError as exc:
             print(f"{name:<20} SKIPPED -- {exc}".split("\n")[0])
             continue

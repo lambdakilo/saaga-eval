@@ -123,3 +123,101 @@ def test_test_patch_helper_additions_are_not_markers():
     """A helper the test patch adds is not distinctive enough to flag on."""
     corpus = {"saaga-docs/x.md": "see _build_fixture for setup"}
     assert check_instance(corpus, GOLD_PATCH, test_patch=TEST_PATCH) == []
+
+
+DUNDER_PATCH = """\
++++ b/pkg/usage.py
+@@
++    def __post_init__(self):
++        self.total = self.a + self.b
++    def reconcile_token_ledger(self):
++        return self.total
+"""
+
+
+def test_dunders_are_not_contamination_markers():
+    """Protocol names recur in every codebase; adding one proves nothing."""
+    symbols = patch_introduced_symbols(DUNDER_PATCH)
+    assert "__post_init__" not in symbols
+    assert "reconcile_token_ledger" in symbols
+
+
+def test_docs_mentioning_dunders_are_not_flagged():
+    """The real false positive: an audit of a smolagents corpus reported only these."""
+    corpus = {
+        "saaga-docs/concepts/token-accounting.md":
+            "`TokenUsage.__post_init__()` automatically calculates total_tokens",
+        "saaga-docs/ARCHITECTURE.md": "`BaseTool` exposes name and __call__",
+    }
+    assert check_instance(corpus, DUNDER_PATCH, []) == []
+
+
+def test_a_real_leak_alongside_dunders_still_fires():
+    """Suppressing dunders must not suppress the signal next to them."""
+    corpus = {"saaga-docs/x.md": "__post_init__ then reconcile_token_ledger runs"}
+    findings = check_instance(corpus, DUNDER_PATCH, [])
+    assert [f.token for f in findings] == ["reconcile_token_ledger"]
+
+
+CLEAN_ADDITION = """\
++++ b/widgets/core.py
+@@
++def compute_widget_checksum(data):
++    return sum(data)
+"""
+
+
+WORD_PATCH = """\
++++ b/pkg/retry.py
+@@
++class Retrying:
++    pass
+"""
+
+
+def test_prose_use_of_a_word_like_symbol_is_review_not_blocking():
+    """Real case: a class named Retrying vs the English word."""
+    corpus = {"saaga-docs/patterns/error-handling.md":
+              "Retrying invalid API keys won't help"}
+    findings = check_instance(corpus, WORD_PATCH, [])
+    assert [f.severity for f in findings] == [Severity.REVIEW]
+    assert blocking(findings) == []
+
+
+def test_code_context_still_blocks():
+    for line in ("see `Retrying` for details",
+                 "call Retrying(max=3)",
+                 "from pkg.retry import Retrying",
+                 "handler = Retrying"):
+        findings = check_instance({"d.md": line}, WORD_PATCH, [])
+        assert blocking(findings), f"should block on: {line}"
+
+
+def test_leaked_symbol_in_backticks_remains_blocking():
+    corpus = {"saaga-docs/x.md": "Resolution uses `_lookup_with_fallback` here."}
+    assert blocking(check_instance(corpus, GOLD_PATCH, []))
+
+
+def test_composed_identifiers_block_even_in_prose():
+    """compute_widget_checksum cannot occur as English; prose is still a leak."""
+    corpus = {"saaga-docs/x.md": "The helper compute_widget_checksum sums the payload."}
+    assert blocking(check_instance(corpus, CLEAN_ADDITION, []))
+
+
+def test_camelcase_identifiers_block_even_in_prose():
+    patch = "+++ b/m.py\n+class TokenUsage:\n+    pass\n"
+    corpus = {"saaga-docs/x.md": "TokenUsage tracks totals across a run."}
+    assert blocking(check_instance(corpus, patch, []))
+
+
+def test_markdown_bold_colon_is_not_an_assignment():
+    """Verbatim from a real corpus; the colon belongs to markdown, not code."""
+    line = "- **Retry is not always right**: Retrying invalid API keys won't help"
+    findings = check_instance({"saaga-docs/patterns/error-handling.md": line}, WORD_PATCH, [])
+    assert [f.severity for f in findings] == [Severity.REVIEW]
+    assert blocking(findings) == []
+
+
+def test_real_assignment_of_a_word_like_symbol_still_blocks():
+    assert blocking(check_instance({"d.md": "handler = Retrying"}, WORD_PATCH, []))
+    assert blocking(check_instance({"d.md": "policy: Retrying = build()"}, WORD_PATCH, []))
