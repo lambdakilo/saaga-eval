@@ -97,7 +97,32 @@ def saaga_version() -> str:
     try:
         return run(["saaga", "--version"], check=False).strip() or "unknown"
     except FileNotFoundError:
-        raise SystemExit("`saaga` not found on PATH. Install it: npm i -g @wonna/saaga")
+        raise SystemExit(
+            "`saaga` not found on PATH. Install it from a checkout:\n"
+            "  cd /path/to/saaga && pnpm install && pnpm build && npm i -g .\n"
+            "or from the registry:\n"
+            "  npm i -g @wonna/saaga"
+        )
+
+
+def saaga_commit() -> str | None:
+    """Git commit of the saaga build on PATH, when it is a local checkout.
+
+    The version string alone cannot distinguish a locally built checkout from
+    the published release -- both report the same alpha version. Resolving the
+    `saaga` shim to its real path and asking git recovers the exact build; a
+    registry install simply has no commit, which is itself worth recording.
+    """
+    binary = shutil.which("saaga")
+    if not binary:
+        return None
+    source = Path(binary).resolve().parent
+    for candidate in (source, *source.parents):
+        if (candidate / ".git").exists():
+            sha = run(["git", "rev-parse", "HEAD"], cwd=candidate, check=False).strip()
+            dirty = run(["git", "status", "--porcelain"], cwd=candidate, check=False).strip()
+            return f"{sha}{'-dirty' if dirty else ''}" if sha else None
+    return None
 
 
 def main() -> int:
@@ -157,6 +182,7 @@ def main() -> int:
         repo=args.repo,
         base_commit=base_commit,
         saaga_version=saaga_version(),
+        saaga_commit=saaga_commit(),
         doc_model=args.doc_model or "backend-default",
         backend=args.backend,
         artifacts=SAAGA_ARTIFACTS,

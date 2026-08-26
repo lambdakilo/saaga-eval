@@ -181,3 +181,32 @@ def test_planner_tolerates_harness_injected_kwargs(corpus_root: Path):
         prompt_type="ignored-by-saaga",
     )
     assert planner.config.corpus_root == str(corpus_root)
+
+
+def test_meta_records_the_saaga_commit(tmp_path, saaga_checkout):
+    """Version alone cannot identify the build; alpha releases reuse it."""
+    import json
+
+    root = tmp_path / "corpora"
+    save_corpus(
+        root,
+        CorpusMeta(
+            repo=REPO,
+            base_commit="deadbeef",
+            saaga_version="1.0.0-alpha.6",
+            doc_model="haiku",
+            backend="claude",
+            artifacts=("saaga-docs",),
+            saaga_commit="b9c902f-dirty",
+        ),
+        pack_corpus(saaga_checkout),
+    )
+    meta = json.loads((root / "acme_widgets" / "meta.json").read_text())
+    assert meta["saaga_commit"] == "b9c902f-dirty"
+    assert meta["doc_model"] == "haiku"
+
+
+def test_meta_commit_is_optional_for_registry_installs():
+    """An npm install has no commit; that absence is itself worth recording."""
+    meta = CorpusMeta(REPO, "deadbeef", "1.0.0-alpha.6", "haiku", "claude", ())
+    assert meta.saaga_commit is None

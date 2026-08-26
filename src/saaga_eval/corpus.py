@@ -45,7 +45,14 @@ _CHUNK_BYTES = 48 * 1024
 
 @dataclass(frozen=True)
 class CorpusMeta:
-    """Provenance for one repository's corpus. Written alongside the tarball."""
+    """Provenance for one repository's corpus. Written alongside the tarball.
+
+    `saaga_commit` exists because `saaga_version` is not sufficient to identify
+    the code that produced a corpus. saaga is alpha and its version string moves
+    slower than its source, so a locally built checkout and the published
+    release both report the same `1.0.0-alpha.6`. Recording the commit is what
+    lets a result be traced to an exact build.
+    """
 
     repo: str
     base_commit: str
@@ -53,6 +60,7 @@ class CorpusMeta:
     doc_model: str
     backend: str
     artifacts: tuple[str, ...]
+    saaga_commit: str | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
