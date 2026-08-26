@@ -62,7 +62,8 @@ original paper's arms. If those do not roughly reproduce published direction on
 your model, the pipeline is wrong and no saaga number from it should be believed.
 
 See [PREREGISTRATION.md](PREREGISTRATION.md) for the decision rule — agree it
-before running, not after.
+before running, not after — and [PROVENANCE.md](PROVENANCE.md) for exactly which
+saaga build is under test and why.
 
 ## A hazard worth knowing about
 
@@ -94,6 +95,14 @@ pip install -e ".[dev]"
 ```
 
 Docker is required — AGENTbench provisions a container per instance.
+
+saaga itself is built from a local checkout rather than installed from npm, so
+the code under test is the code that was security-audited. See
+[PROVENANCE.md](PROVENANCE.md):
+
+```bash
+cd /path/to/saaga && pnpm install --frozen-lockfile && pnpm build && npm i -g .
+```
 
 ### 1. Build a corpus (once per repository)
 
