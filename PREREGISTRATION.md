@@ -41,8 +41,17 @@ only pass/fail cannot detect that.
 
 - Wall-clock runtime per instance (comparability with Lulla et al.)
 - Output tokens per instance
-- Turns to first file edit — a direct probe of the "agents waste turns exploring"
-  claim, and the measure most likely to move even if resolve rate does not
+- **Steps to first gold-patch file read** — AGENTbench already computes this as
+  `number_steps_first_read`, so it costs nothing to collect. It is the most
+  direct probe of the "agents waste turns rediscovering the codebase" claim,
+  and the measure most likely to move even if resolve rate does not. Given that
+  both published studies found no resolve-rate effect, **this is where a real
+  saaga effect would show up first**, and it should be read as the primary
+  mechanism outcome rather than a nice-to-have.
+
+  Note it is undefined when the agent never opens a gold-patch file. Those
+  instances are excluded from the paired comparison rather than imputed —
+  see `src/saaga_eval/analysis.py`.
 
 ## Decision rule **[OPEN]**
 

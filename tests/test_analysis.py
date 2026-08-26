@@ -7,6 +7,8 @@ each is pinned here with a constructed dataset whose right answer is known.
 from __future__ import annotations
 
 from saaga_eval.analysis import (
+    load_arm,
+    paired_metric,
     InstanceResult,
     bootstrap_ci,
     core_contrasts,
@@ -106,3 +108,66 @@ def test_core_contrasts_skips_missing_arms():
     contrasts = core_contrasts(data)
     assert len(contrasts) == 1
     assert "substitution" in contrasts[0].treatment
+
+
+# --- CSV loading against AGENTbench's real column schema -------------------
+
+CSV_HEADER = (
+    "instance_id,resolved,execution_cost,number_steps,number_steps_first_read,"
+    "number_errors,sys_prompt_size,plan_type,run_id\n"
+)
+
+
+def write_csv(tmp_path, name, rows):
+    path = tmp_path / name
+    path.write_text(CSV_HEADER + "".join(rows), encoding="utf-8")
+    return path
+
+
+def test_csv_booleans_are_parsed_not_coerced(tmp_path):
+    """bool("False") is True -- the trap this guards against."""
+    path = write_csv(tmp_path, "a.csv", [
+        "i0,False,0.5,10,3,0,1200,no_plan,0\n",
+        "i1,True,0.7,12,4,1,1200,no_plan,0\n",
+    ])
+    arm = load_arm(path)
+    assert arm["i0"].resolved is False
+    assert arm["i1"].resolved is True
+
+
+def test_csv_maps_real_column_names(tmp_path):
+    path = write_csv(tmp_path, "a.csv", ["i0,True,1.25,20,7,2,900,saaga_planner,0\n"])
+    result = load_arm(path)["i0"]
+    assert result.cost == 1.25
+    assert result.steps == 20
+    assert result.steps_first_read == 7
+    assert result.errors == 2
+    assert result.sys_prompt_size == 900
+
+
+def test_missing_first_read_is_none_not_zero(tmp_path):
+    """Absent means the agent never opened a gold-patch file, not 'zero steps'."""
+    path = write_csv(tmp_path, "a.csv", ["i0,False,0.1,30,,0,900,no_plan,0\n"])
+    assert load_arm(path)["i0"].steps_first_read is None
+
+
+def test_paired_metric_excludes_instances_missing_the_metric(tmp_path):
+    control = write_csv(tmp_path, "c.csv", [
+        "i0,True,1.0,20,10,0,900,no_plan,0\n",
+        "i1,True,1.0,20,,0,900,no_plan,0\n",
+    ])
+    treatment = write_csv(tmp_path, "t.csv", [
+        "i0,True,1.0,15,4,0,900,saaga_planner,0\n",
+        "i1,True,1.0,15,5,0,900,saaga_planner,0\n",
+    ])
+    out = paired_metric(load_arm(treatment), load_arm(control), "steps_first_read")
+    assert out is not None
+    mean, _low, _high, n = out
+    assert n == 1, "i1 has no control value and must be excluded"
+    assert mean == -6.0
+
+
+def test_paired_metric_returns_none_when_nothing_is_comparable(tmp_path):
+    control = write_csv(tmp_path, "c.csv", ["i0,True,1.0,20,,0,900,no_plan,0\n"])
+    treatment = write_csv(tmp_path, "t.csv", ["i0,True,1.0,15,,0,900,saaga_planner,0\n"])
+    assert paired_metric(load_arm(treatment), load_arm(control), "steps_first_read") is None

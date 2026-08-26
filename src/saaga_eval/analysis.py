@@ -38,7 +38,15 @@ _BOOTSTRAP_ITERATIONS = 10_000
 
 @dataclass(frozen=True)
 class InstanceResult:
-    """One instance under one arm."""
+    """One instance under one arm.
+
+    `steps_first_read` is AGENTbench's `number_steps_first_read`: how many
+    steps the agent took before first opening a file that the gold patch
+    touches. It is the most direct measure of the claim saaga actually makes --
+    that agents waste turns rediscovering a codebase -- and it can move even
+    when resolve rate does not, which both published studies found it doesn't.
+    Treat it as the primary *mechanism* outcome.
+    """
 
     instance_id: str
     resolved: bool
@@ -47,6 +55,10 @@ class InstanceResult:
     output_tokens: int = 0
     runtime_s: float = 0.0
     status: str = ""
+    steps: int | None = None
+    steps_first_read: int | None = None
+    errors: int = 0
+    sys_prompt_size: int = 0
 
     @property
     def usable(self) -> bool:
@@ -156,15 +168,43 @@ def paired_difference(
     )
 
 
-def load_arm(report_path: Path) -> dict[str, InstanceResult]:
-    """Read an arm's per-instance results from AGENTbench report JSON.
+def _truthy(value) -> bool:
+    """CSV round-trips booleans as text; `bool("False")` is True."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "t"}
 
-    Tolerant of shape: the harness writes per-instance `report.json` files and
-    an aggregate, and field names have moved between versions. Anything
-    unparseable is skipped rather than silently scored as unresolved.
+
+def _number(value, cast=float, default=None):
+    text = str(value).strip() if value is not None else ""
+    if text in {"", "none", "None", "nan", "NaN"}:
+        return default
+    try:
+        return cast(float(text))
+    except (TypeError, ValueError):
+        return default
+
+
+def load_arm(path: Path) -> dict[str, InstanceResult]:
+    """Read one arm's per-instance results from `analyze.py` CSV output.
+
+    Columns come from AGENTbench's `CSV_COLUMNS`. A JSON file is accepted too,
+    for hand-built fixtures. Unparseable rows are skipped rather than silently
+    scored as unresolved -- a missing row is missing evidence, not a failure.
+
+    When several rows share an instance_id (repeated seeds via `--run-id`), the
+    last one wins here; aggregate seeds with `pool_seeds` instead of relying on
+    this.
     """
-    raw = json.loads(Path(report_path).read_text(encoding="utf-8"))
-    rows = raw.values() if isinstance(raw, dict) else raw
+    path = Path(path)
+    if path.suffix == ".json":
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        rows = list(raw.values()) if isinstance(raw, dict) else list(raw)
+    else:
+        import csv
+
+        with path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
 
     results: dict[str, InstanceResult] = {}
     for row in rows:
@@ -175,14 +215,48 @@ def load_arm(report_path: Path) -> dict[str, InstanceResult]:
             continue
         results[instance_id] = InstanceResult(
             instance_id=instance_id,
-            resolved=bool(row.get("resolved", row.get("passed", False))),
-            cost=float(row.get("cost", 0.0) or 0.0),
-            input_tokens=int(row.get("input_tokens", 0) or 0),
-            output_tokens=int(row.get("output_tokens", 0) or 0),
-            runtime_s=float(row.get("runtime", 0.0) or 0.0),
+            resolved=_truthy(row.get("resolved", row.get("passed", False))),
+            cost=_number(row.get("execution_cost", row.get("cost")), float, 0.0) or 0.0,
+            input_tokens=_number(row.get("prompt_tokens_first_read"), int, 0) or 0,
+            output_tokens=_number(row.get("completion_tokens_first_read"), int, 0) or 0,
             status=str(row.get("status", "") or ""),
+            steps=_number(row.get("number_steps"), int),
+            steps_first_read=_number(row.get("number_steps_first_read"), int),
+            errors=_number(row.get("number_errors"), int, 0) or 0,
+            sys_prompt_size=_number(row.get("sys_prompt_size"), int, 0) or 0,
         )
     return results
+
+
+def paired_metric(
+    treatment: dict[str, InstanceResult],
+    control: dict[str, InstanceResult],
+    attribute: str,
+) -> tuple[float, float, float, int] | None:
+    """Paired mean difference on a continuous metric, e.g. `steps_first_read`.
+
+    Returns ``(mean_delta, ci_low, ci_high, n)``. Instances where either arm
+    lacks the metric are excluded: `number_steps_first_read` is absent when the
+    agent never opened a gold-patch file at all, and imputing a value there
+    would invent data.
+    """
+    shared = sorted(set(treatment) & set(control))
+    differences = []
+    for key in shared:
+        left, right = treatment[key], control[key]
+        if not (left.usable and right.usable):
+            continue
+        a, b = getattr(left, attribute), getattr(right, attribute)
+        if a is None or b is None:
+            continue
+        differences.append(float(a) - float(b))
+
+    if not differences:
+        return None
+
+    mean = sum(differences) / len(differences)
+    low, high = bootstrap_ci(differences)
+    return (mean, low, high, len(differences))
 
 
 def core_contrasts(arms: dict[str, dict[str, InstanceResult]]) -> list[Comparison]:
