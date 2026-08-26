@@ -20,7 +20,7 @@ Smoke run on NVIDIA NIM's free tier, two instances, one worker::
 
     export NVIDIA_NIM_API_KEY=nvapi-...
     python scripts/run_arm.py --arm saaga_substitution \\
-        --exec-model nim:zai/glm-5.2 --slice-spec ":2" --workers 1
+        --exec-model nim:moonshotai/kimi-k3 --slice-spec ":2" --workers 1
 
 A real pilot arm on Sonnet::
 

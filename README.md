@@ -150,13 +150,22 @@ benchmark runs go to NIM:
 ```bash
 export NVIDIA_NIM_API_KEY=nvapi-...        # free tier: https://build.nvidia.com
 python scripts/run_arm.py --arm saaga_substitution \
-    --exec-model nim:zai/glm-5.2 --slice-spec ":2" --workers 1
+    --exec-model nim:moonshotai/kimi-k3 --slice-spec ":2" --workers 1
 ```
 
 The default `--generator miniswe_agents` is deliberate: mini-SWE-agent takes a
 `base_url` directly, whereas the CLI scaffolds each need their own vendor binary
-and auth. Copy the exact model id from build.nvidia.com, and keep `--workers` at
-1–2 if the endpoint is rate-limited.
+and auth.
+
+Verify a model before running — a catalogue listing does not mean it is
+deployed, and reasoning models need a large completion budget or
+`reasoning_content` consumes it before any answer appears:
+
+```bash
+python scripts/check_endpoint.py --key-file secret --model moonshotai/kimi-k3
+```
+
+Keep `--workers 1` on a free tier; NIM returns 429 on back-to-back requests.
 
 ## Cost
 

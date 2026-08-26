@@ -6,6 +6,9 @@ output/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.secret
+secret
+secret.*
 vendor/
 .venv/
 venv/

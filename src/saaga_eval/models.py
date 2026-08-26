@@ -42,12 +42,19 @@ def nim_api_key() -> str | None:
     return os.getenv("NVIDIA_NIM_API_KEY") or os.getenv("NVIDIA_API_KEY")
 
 
+# Reasoning models on these endpoints emit `reasoning_content` that is billed
+# against the same completion budget as the answer. A budget sized for a normal
+# reply gets consumed before any content is produced, which surfaces as an empty
+# response and reads as a broken harness. Default high enough to leave room.
+DEFAULT_MAX_COMPLETION_TOKENS = 8192
+
+
 def openai_compatible_model(
     model_id: str,
     base_url: str,
     api_key: str | None,
     temperature: float = 0.0,
-    max_completion_tokens: int | None = None,
+    max_completion_tokens: int | None = DEFAULT_MAX_COMPLETION_TOKENS,
 ) -> dict:
     """Build an AGENTbench model config for any OpenAI-compatible endpoint."""
     kwargs: dict = {
@@ -99,9 +106,11 @@ def register_nim(model_id: str) -> str:
 
     Called from `run_arm.py` whenever `--exec-model` starts with ``nim:``, so a
     model id can be passed straight through without this file having to know it
-    in advance. NIM model ids look like ``zai/glm-5.2`` or
-    ``meta/llama-3.3-70b-instruct``; copy the exact string from
-    https://build.nvidia.com.
+    in advance. NIM model ids look like ``moonshotai/kimi-k3`` or
+    ``openai/gpt-oss-120b``. Verify one before using it -- appearing in the
+    catalogue listing does not mean the model is actually deployed::
+
+        python scripts/check_endpoint.py --key-file secret --model <id>
     """
     if not nim_api_key():
         raise SystemExit(
@@ -115,7 +124,7 @@ def register_nim(model_id: str) -> str:
 def maybe_register(exec_model: str) -> str:
     """Resolve `--exec-model`, auto-registering ``nim:``/``openai-compat:`` forms.
 
-    ``nim:zai/glm-5.2``                       -> NIM free tier
+    ``nim:moonshotai/kimi-k3``                -> NIM free tier
     ``openai-compat:<base_url>::<model_id>``  -> any other endpoint (vLLM, LM Studio)
     anything else                             -> assumed already in the registry
     """
