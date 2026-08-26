@@ -81,6 +81,29 @@ decision about saaga needs a corpus built with the model a real user would use.
 If `saaga init` itself fails under a cheap model, that is a result about saaga
 on that model — not a harness defect. Report the two separately.
 
+### Observed: Haiku is marginal for saaga's own verifier
+
+On the first smolagents corpus build, phase "Core Agent System" consumed **all
+three** verify/fix iterations:
+
+```
+documenting  6m44s
+verifying (1/3)  3m31s  ->  fixing  47.1s
+verifying (2/3)  3m22s  ->  fixing  54.2s
+verifying (3/3)  3m33s  ->  fixing  ...
+```
+
+saaga's verify step checks the output against a generated six-dimension quality
+rubric (completeness, clarity, public-interface focus, refactoring
+independence, actionability, alignment). Haiku's first pass failed it twice and
+reached the iteration ceiling on the third.
+
+Two things follow. The verify loop is doing real work rather than
+rubber-stamping — a point in saaga's favour, and independent of this
+experiment. And a Haiku-built corpus is at or past the edge of what saaga's own
+quality bar accepts, which is a stronger reason than cost alone to treat such a
+corpus as plumbing evidence only.
+
 ## Benchmark substrate
 
 | | |
